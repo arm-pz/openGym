@@ -11,6 +11,7 @@ on:
       - 'scripts/build-coach-assets.mjs'
       - 'scripts/build-coach-library.mjs'
       - 'api/coach/prompts/**'
+      - '.github/**'
       - '.github/workflows/test.yml'
   push:
     branches: [main, coach]

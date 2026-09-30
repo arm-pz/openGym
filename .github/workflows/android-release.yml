@@ -1,0 +1,68 @@
+name: Build Android APK
+
+# Merging to main produces a signed release APK attached to the rolling
+# `android-edge` prerelease, so there is always a current installable build.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-edge
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build mobile web bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:mobile
+
+      - name: Decode signing keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.keystore
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "KEYSTORE_ALIAS=${{ secrets.KEYSTORE_ALIAS }}" >> "$GITHUB_ENV"
+          echo "KEYSTORE_KEY_PASSWORD=${{ secrets.KEYSTORE_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Assemble signed release
+        working-directory: frontend/android
+        run: |
+          ./gradlew assembleRelease
+          mv app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/openGym-edge.apk"
+
+      - name: Publish rolling prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view android-edge --repo ${{ github.repository }} >/dev/null 2>&1; then
+            gh release delete android-edge --repo ${{ github.repository }} --yes
+          fi
+          version=$(node -p "require('./frontend/package.json').version")
+          gh release create android-edge "$RUNNER_TEMP/openGym-edge.apk#openGym-edge.apk" \
+            --repo ${{ github.repository }} \
+            --prerelease --latest=false \
+            --title "Android edge build (v${version} @ ${GITHUB_SHA::7})" \
+            --notes "Automatic build of \`main\` after merge. Signed with the fork key; not a tagged release."
