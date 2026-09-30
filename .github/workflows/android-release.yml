@@ -26,7 +26,12 @@ jobs:
           java-version: '21'
 
       - name: Ensure Android SDK platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | "$SDKM" --licenses >/dev/null
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0"
 
       - uses: actions/setup-node@v7
         with:
